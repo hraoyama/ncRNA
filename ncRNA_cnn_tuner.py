@@ -1,6 +1,4 @@
 import tensorflow as tf
-<<<<<<< HEAD:ncRNA_cnn_tuner.py
-=======
 import numpy as np
 from tensorflow.keras.layers import Dense, Flatten, Activation, Dropout, Embedding, Conv1D, MaxPooling1D, GRU
 from tensorflow.keras.layers import LSTM, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Input, Multiply
@@ -8,12 +6,9 @@ from tensorflow.keras.layers import Dense, Flatten, Activation, Dropout, Embeddi
     MaxPooling1D, Concatenate, BatchNormalization, GaussianNoise
 from tensorflow.keras.layers import SimpleRNN, GRU, LeakyReLU
 from tensorflow.keras.layers import Concatenate, Average
->>>>>>> parent of 3267b1c (base models checked in):rnn_cnn_tb_tuner_setup.py
 from tensorflow.keras.models import Sequential, load_model, Model
 from tensorflow.keras.layers import Bidirectional
-<<<<<<< HEAD:ncRNA_cnn_tuner.py
 from tensorflow.keras.models import Model
-=======
 from timeit import default_timer as timer
 import h5py as h5
 import matplotlib.pyplot as plt
@@ -26,7 +21,6 @@ import gpflow
 from gpflow.utilities import ops, print_summary, set_trainable
 from gpflow.config import set_default_float, default_float, set_default_summary_fmt
 from gpflow.ci_utils import ci_niter
->>>>>>> parent of 3267b1c (base models checked in):rnn_cnn_tb_tuner_setup.py
 import warnings
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -35,11 +29,9 @@ from tensorflow.keras.layers import Dense, Flatten, Activation, Dropout, Embeddi
 from tensorflow.keras.layers import LSTM, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Input, Multiply, \
     SimpleRNN, GRU, LeakyReLU
 from keras_self_attention import SeqSelfAttention, SeqWeightedAttention
-<<<<<<< HEAD:ncRNA_cnn_tuner.py
 import kerastuner as kt
 import site
 import pandas as pd
-=======
 from tensorflow.keras import regularizers
 import os
 from collections import defaultdict
@@ -48,7 +40,6 @@ import kerastuner as kt
 from kerastuner import HyperModel
 from tensorflow.summary import create_file_writer
 from functools import partial
->>>>>>> parent of 3267b1c (base models checked in):rnn_cnn_tb_tuner_setup.py
 
 """Data Preparation"""
 
@@ -278,7 +269,7 @@ if __name__ == "__main__":
     best_model = tuner.get_best_models(num_models=1)[0]
     # Evaluate the best model.
     loss, accuracy = best_model.evaluate(X_test, Y_test)
-=======
+
 def run_and_save_model(model_func, model_name, input_shape, X_train, Y_train, kwargs):
     make_dir_if_not_exist(model_name)
     m = model_func(model_name, input_shape)
@@ -548,4 +539,3 @@ rnn_2, history_rnn_2 = compile_and_fit_model_with_tb(mRNN3x,
 # mCNN = tf.keras.models.load_model("CNN_new.h5")
 # mRNN._name = "rnn_model"
 # mCNN._name = "cnn_model"
->>>>>>> parent of 3267b1c (base models checked in):rnn_cnn_tb_tuner_setup.py

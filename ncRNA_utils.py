@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 from tensorflow.keras.utils import to_categorical
 import h5py as h5
 import matplotlib.pyplot as plt
@@ -10,6 +9,9 @@ from collections import defaultdict
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.summary import create_file_writer
 from sklearn.model_selection import train_test_split
+import numpy as np
+import itertools
+import multiprocessing
 
 
 def coShuffled_vectors(X, Y):
@@ -351,3 +353,120 @@ def run_mirrored_strategy(model_func, base_batch_size, nepochs, x_train, y_train
                         validation_data=(x_test, y_test),
                         **kwargs)
     return model, history
+
+
+def sparse_setdiff(a1, a2):
+    a1a = a1.reshape(a1.shape[0], -1)
+    a2a = a2.reshape(a2.shape[0], -1)
+    spa2a = [ np.where(x)[0].tolist() for x in a2a]
+    spa1a = [ np.where(x)[0].tolist() for x in a1a]
+    idxs_to_keep = []
+    for idx, sample in enumerate(spa1a):
+        try:
+            spa2a.index(sample)
+        except ValueError:
+            # not in list
+            idxs_to_keep.append(idx)
+    return a1[idxs_to_keep], idxs_to_keep
+
+
+def unpacking_apply_along_axis(all_args):
+    """
+    Like numpy.apply_along_axis(), but with arguments in a tuple
+    instead.
+
+    This function is useful with multiprocessing.Pool().map(): (1)
+    map() only handles functions that take a single argument, and (2)
+    this function can generally be imported from a module, as required
+    by map().
+    """    
+    (func1d, axis, arr, args, kwargs) = all_args
+    # return np.apply_along_axis(func1d, axis, arr, *args, **kwargs)
+
+def parallel_apply_along_axis(func1d, axis, arr, *args, **kwargs):
+    """
+    Like numpy.apply_along_axis(), but takes advantage of multiple
+    cores.
+    """        
+    # Effective axis where apply_along_axis() will be applied by each
+    # worker (any non-zero axis number would work, so as to allow the use
+    # of `np.array_split()`, which is only done on axis 0):
+    effective_axis = 1 if axis == 0 else axis
+    if effective_axis != axis:
+        arr = arr.swapaxes(axis, effective_axis)
+
+    # Chunks for the mapping (only a few chunks):
+    chunks = [(func1d, effective_axis, sub_arr, args, kwargs)
+              for sub_arr in np.array_split(arr, multiprocessing.cpu_count())]
+
+    pool = multiprocessing.Pool()
+    individual_results = pool.map(unpacking_apply_along_axis, chunks)
+    # Freeing the workers:
+    pool.close()
+    pool.join()
+
+    return np.concatenate(individual_results)
+
+
+# ## not convinced these are correct, a check on the in/output does not pan out ... do not use now
+# https://github.com/phantomachine/numpy-setdiff-intersect/blob/master/setops.py
+
+# #---------- SET-DIFFERENCE OF ARRAYS (not applied here...) -------------------------------------
+# def setdiff(a1,a2):
+#     a1a = a1.reshape(a1.shape[0], -1)
+#     a2a = a2.reshape(a2.shape[0], -1)
+#     a1_rows = a1a.view([('', a1a.dtype)] * a1a.shape[-1])
+#     a2_rows = a2a.view([('', a2a.dtype)] * a2a.shape[-1])
+#     ad = np.setdiff1d(a1_rows, a2_rows).view(a1a.dtype).reshape(-1, a1a.shape[-1])
+#     # ad.shape
+#     # index_bool.shape
+#     # np.where(index_bool)
+#     index_bool = np.in1d(a1_rows, a2_rows, invert=True)
+#     index = np.arange(index_bool.size)[index_bool]
+#     return ad, index, index_bool
+
+
+# def setdiff2ndIdx(a1, a2):
+#     """Simpler version of Matlab/R's SETDIFF for ND arrays """
+#     a1 = a1.ravel().reshape(-1,a1.shape[-1])
+#     a2 = a2.ravel().reshape(-1,a1.shape[-1])
+#     a1_rows = a1.view([('', a1.dtype)] * a1.shape[-1])
+#     a2_rows = a2.view([('', a2.dtype)] * a2.shape[-1])
+#     ad = np.setdiff1d(a1_rows, a2_rows).view(a1.dtype).reshape(-1, a1.shape[-1])
+#     index_bool = np.in1d(a1_rows, a2_rows, invert=True)
+#     index = np.arange(index_bool.size)[index_bool]
+#     return ad, index, index_bool
+
+# #---------- INTERSECTION OF ARRAYS --------------------------------------
+# def intersect(a1, a2):
+#     """Simpler version of Matlab/R's INTERSECT for ND arrays """
+#     a1 = a1.ravel().reshape(-1,a1.shape[-1])
+#     a2 = a2.ravel().reshape(-1,a1.shape[-1])
+#     a1_rows = a1.view([('', a1.dtype)] * a1.shape[-1])
+#     a2_rows = a2.view([('', a2.dtype)] * a2.shape[-1])
+#     ax=np.intersect1d(a1_rows, a2_rows).view(a1.dtype).reshape(-1, a1.shape[-1])
+#     index_bool = np.in1d(a1_rows, a2_rows, invert=False)
+#     index = np.arange(index_bool.size)[index_bool]
+#     return ax, index, index_bool
+
+# #------------- PYTHON LIST or NUMPY ARRAYS: Flatten vs. Reconstruct -------
+# def flatten2(nl):
+#     """
+#     To flatten Python List of lists / numpy arrays (2 levels). (See also reverse operation in RECONSTRUCT() below.)
+#     Usage: L_flat,l1,l2 = flatten2(L)
+#     Source: http://stackoverflow.com/questions/27982432/flattening-and-unflattening-a-nested-list-of-numpy-arrays
+#     """
+#     l1 = [len(s) for s in itertools.chain.from_iterable(nl)]
+#     l2 = [len(s) for s in nl]
+
+#     nl = list(itertools.chain.from_iterable(itertools.chain.from_iterable(nl)))
+
+#     return nl,l1,l2
+
+# def reconstruct2(nl, l1, l2):
+#     """
+#     To reconstruct Python List of lists / numpy arrays. Inverse operation of FLATTEN() above.
+#     Usage: L_reconstructed = reconstruct2(L_flat,l1,l2)
+#     Source: http://stackoverflow.com/questions/27982432/flattening-and-unflattening-a-nested-list-of-numpy-arrays
+#     """
+#     return np.split(np.split(nl,np.cumsum(l1)),np.cumsum(l2))[:-1]
