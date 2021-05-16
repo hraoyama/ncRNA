@@ -18,7 +18,7 @@ site.addsitedir("D:/Code/ncRNA")
 pd.set_option('display.width', 400)
 pd.set_option('display.max_columns', 40)
 
-from ncRNA_utils import getData, coShuffled_vectors, reverse_tensor, compile_and_fit_model_with_tb, getE2eData, setdiff
+from ncRNA_utils import getData, coShuffled_vectors, reverse_tensor, compile_and_fit_model_with_tb, getE2eData, sparse_setdiff
 
 def confirm_no_duplicates_in_data(Xs):
     # check no duplicates in the data
