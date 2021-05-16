@@ -41,18 +41,41 @@ if __name__ == "__main__":
                                                                                                     include_secondary=False)
     confirm_no_duplicates_in_data((X_train_1000e, X_test_1000e, X_val_1000e))
 
+    X_train_1000e_w2nd, Y_train_1000e_w2nd, X_test_1000e_w2nd, Y_test_1000e_w2nd, X_val_1000e_w2nd, Y_val_1000e_w2nd = getE2eData(is500=False,
+                                                                                                    include_secondary=True)
+
     # now let's get some validation data that was not used for creating these saved models
     X_test_for_all, idxs_kept = sparse_setdiff(X_train_1000e.copy(),X_train_1000.numpy().copy())
     Y_test_for_all = Y_train_1000e[idxs_kept,:]
     X_test_for_all, idxs_kept = sparse_setdiff(X_test_for_all.copy(),X_test_1000.numpy().copy())
     Y_test_for_all = Y_test_for_all[idxs_kept,:]
     # validation is none for the original so this should be it...
-
     # np.save("D:/Code/ncRNA/data/X_test_for_all.npy", X_test_for_all)
     # np.save("D:/Code/ncRNA/data/Y_test_for_all.npy", Y_test_for_all)
 
 
-    # CNN no secondary - great
+    # CNNs - new data - no secondary
+    mCNN1_1000 = load_model("./models/CNN_baseline_May16_e2e1000_256.h5")
+    mCNN1_1000._name = "cnn_merged_newdata_finalist_1"
+
+    mCNN2_1000 = load_model("./models/CNN_baseline_May16_e2e.h5")
+    mCNN2_1000._name = "cnn_merged_newdata_finalist_2"
+    
+    mCNN_1000 = load_model("cnn_noTest_20210516_model_445_0.998")
+    mCNN_1000._name = "cnn_merged_newdata_colab_finalist"
+    
+    
+    # RNN - new data - with secondary
+    mCNN_1000_w2nd = load_model("./models/CNN_baseline_May16_e2e_secondary.h5", custom_objects=SeqWeightedAttention.get_custom_objects())
+    mCNN_1000_w2nd._name = "cnn_merged_newdata_w_secondary_finalist"
+
+    mCNN1_1000.evaluate(X_test_1000e, Y_test_1000e)  # 96.15% 
+    mCNN2_1000.evaluate(X_test_1000e, Y_test_1000e)  # 95.80 %  
+    mCNN_1000.evaluate(X_test_1000e, Y_test_1000e)  # 95.57% 
+    mCNN_1000_w2nd.evaluate(X_test_1000e_w2nd, Y_test_1000e_w2nd)  # 94.64 %
+    
+
+    # CNN - old data - no secondary - great
     mCNN2_1000 = load_model("./models/CNN_baseline.h5")
     mCNN2_1000.evaluate(X_test_1000, Y_test_1000)  # 93.51%
     mCNN2_1000.evaluate(X_train_1000e, Y_train_1000e)  # 98.02% (should be the training accuracy)
@@ -60,13 +83,12 @@ if __name__ == "__main__":
     mCNN2_1000.evaluate(X_val_1000e, Y_val_1000e)  # 97.20% (the new validation data)    
     mCNN2_1000.evaluate(X_test_for_all, Y_test_for_all)  # 94.21% (the real validation data)
     
-    # RNN no secondary - great
+    # RNN - old data - no secondary - great
     mRNN_1000l = load_model("./models/PureRNN_no_sec.h5", custom_objects=SeqWeightedAttention.get_custom_objects())
     mRNN_1000l.evaluate(X_train_1000e, Y_train_1000e)  # 97.24% (should be the training accuracy)
     mRNN_1000l.evaluate(X_test_1000e, Y_test_1000e)  # 97.79% (should be the test accuracy - used to fit the model?)
     mRNN_1000l.evaluate(X_val_1000e, Y_val_1000e)  # 96.15% (the new validation data)
     mRNN_1000l.evaluate(X_test_for_all, Y_test_for_all)  # 92.93% (the real validation data)
-    
 
     # bad => need more data and overfits with hyperband ...
     X_train_500, Y_train_500, X_test_500, Y_test_500, X_val, Y_val = getData(is500=True, shuffle=True, ise2e=False)

@@ -3,12 +3,16 @@ from tensorflow.keras.utils import to_categorical
 import h5py as h5
 import matplotlib.pyplot as plt
 from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Conv1D, LeakyReLU, MaxPooling1D, BatchNormalization, GaussianNoise, Dropout, Dense, Flatten
 import errno
 import os
 from collections import defaultdict
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.summary import create_file_writer
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+import kerastuner as kt
+from kerastuner import HyperModel
 import numpy as np
 import itertools
 import multiprocessing
@@ -22,6 +26,8 @@ def coShuffled_vectors(X, Y):
     else:
         raise ValueError(f"0-dimension has to be the same {tf.shape(X)[0]} != {tf.shape(Y)[0]}")
 
+def reverse_one_hot(Y_input):
+    return np.apply_along_axis(np.argmax, 1, Y_input) + 1
 
 def getNpArrayFromH5(hf_Data):
     X_train = hf_Data['Train_Data']  # Get train set
@@ -114,62 +120,6 @@ def get_layer_by_name(layers, name, return_first=True):
     if not matching_named_layers:
         return None
     return matching_named_layers[0] if return_first else matching_named_layers
-
-
-def get_combined_features_from_models(
-        to_combine,
-        X_train, Y_train,
-        X_test, Y_test,
-        reverse_one_hot=False,
-        normalize_X_func=None):
-    models = []
-    models_dict = {}
-    X_trains_out = []
-    X_test_out = []
-    XY_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: None))))
-
-    if reverse_one_hot:
-        Y_train_new = np.apply_along_axis(np.argmax, 1, Y_train) + 1
-        Y_test_new = np.apply_along_axis(np.argmax, 1, Y_test) + 1
-    else:
-        Y_train_new = Y_train.copy()
-        Y_test_new = Y_test.copy()
-
-    for model_file_name, layer_name, kwargs in to_combine:
-        model_here = None
-        if isinstance(model_file_name, tf.keras.models.Model):
-            model_here = model_file_name
-            model_file_name = model_here.name
-        else:
-            if model_file_name in models_dict.keys():
-                model_here = models_dict[model_file_name]
-            else:
-                model_here = tf.keras.models.load_model(model_file_name,
-                                                        **kwargs) if kwargs is not None else tf.keras.models.load_model \
-                    (model_file_name)
-
-        features_model = Model(model_here.input,
-                               get_layer_by_name(model_here.layers, layer_name).output)
-        if normalize_X_func is None:
-            X_trains_out.append(np.array(features_model.predict(X_train), dtype='float64'))
-            X_test_out.append(np.array(features_model.predict(X_test), dtype='float64'))
-        else:
-            X_trains_out.append(np.array(normalize_X_func(features_model.predict(X_train)), dtype='float64'))
-            X_test_out.append(np.array(normalize_X_func(features_model.predict(X_test)), dtype='float64'))
-        XY_dict[model_file_name][layer_name]['Train']['X'] = X_trains_out[-1]
-        XY_dict[model_file_name][layer_name]['Test']['X'] = X_test_out[-1]
-        XY_dict[model_file_name][layer_name]['Train']['Y'] = Y_train_new
-        XY_dict[model_file_name][layer_name]['Test']['Y'] = Y_test_new
-        models.append(((model_file_name, layer_name), (model_here,features_model)))
-        models_dict[model_file_name] = model_here
-
-    X_train_new = np.concatenate(tuple(X_trains_out), axis=1)
-    X_test_new = np.concatenate(tuple(X_test_out), axis=1)
-
-    data_train = (X_train_new, Y_train_new)
-    data_test = (X_test_new, Y_test_new)
-
-    return models, data_train, data_test, XY_dict
 
 
 def make_dir_if_not_exist(used_path):
@@ -321,23 +271,6 @@ def compile_model_and_fit_with_custom_loop(model_func,
     return m
 
 
-def reinitialize_weights(model):
-    for ix, layer in enumerate(model.layers):
-        if hasattr(model.layers[ix], 'kernel_initializer') and hasattr(model.layers[ix], 'bias_initializer'):
-            weight_initializer = model.layers[ix].kernel_initializer
-            bias_initializer = model.layers[ix].bias_initializer
-
-            old_weights, old_biases = model.layers[ix].get_weights()
-
-            model.layers[ix].set_weights([
-                weight_initializer(shape=old_weights.shape),
-                bias_initializer(shape=len(old_biases))])
-    return model
-
-
-def reverse_tensor(X):
-    return tf.gather(X, tf.reverse(tf.range(start=0, limit=tf.shape(X)[0], dtype=tf.int32), (0,)))
-
 
 def run_mirrored_strategy(model_func, base_batch_size, nepochs, x_train, y_train, x_test, y_test, **kwargs):
     strategy = tf.distribute.MirroredStrategy()
@@ -358,8 +291,8 @@ def run_mirrored_strategy(model_func, base_batch_size, nepochs, x_train, y_train
 def sparse_setdiff(a1, a2):
     a1a = a1.reshape(a1.shape[0], -1)
     a2a = a2.reshape(a2.shape[0], -1)
-    spa2a = [ np.where(x)[0].tolist() for x in a2a]
-    spa1a = [ np.where(x)[0].tolist() for x in a1a]
+    spa2a = [np.where(x)[0].tolist() for x in a2a]
+    spa1a = [np.where(x)[0].tolist() for x in a1a]
     idxs_to_keep = []
     for idx, sample in enumerate(spa1a):
         try:
@@ -369,44 +302,279 @@ def sparse_setdiff(a1, a2):
             idxs_to_keep.append(idx)
     return a1[idxs_to_keep], idxs_to_keep
 
+def get_combined_features_from_models(
+    
+        to_combine,
+        X_train, Y_train,
+        X_test, Y_test,
+        reverse_one_hot=False,
+        normalize_X_func=None):
+    
+    models = []
+    models_dict = {}
+    X_trains_out = []
+    X_test_out = []
+    XY_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: None))))
 
-def unpacking_apply_along_axis(all_args):
-    """
-    Like numpy.apply_along_axis(), but with arguments in a tuple
-    instead.
+    models_have_different_inputs = isinstance(Y_train,list)
 
-    This function is useful with multiprocessing.Pool().map(): (1)
-    map() only handles functions that take a single argument, and (2)
-    this function can generally be imported from a module, as required
-    by map().
-    """    
-    (func1d, axis, arr, args, kwargs) = all_args
-    # return np.apply_along_axis(func1d, axis, arr, *args, **kwargs)
+    if reverse_one_hot:
+        if models_have_different_inputs:
+            Y_train_new = np.apply_along_axis(np.argmax, 1, Y_train) + 1
+            Y_test_new = np.apply_along_axis(np.argmax, 1, Y_test) + 1
+        else:
+            Y_train_new = [ np.apply_along_axis(np.argmax, 1, y_train) + 1 for y_train in Y_train ]  
+            Y_test_new = [ np.apply_along_axis(np.argmax, 1, y_test) + 1 for y_test in Y_test ]              
+    else:
+        if models_have_different_inputs:
+            Y_train_new = Y_train.copy()
+            Y_test_new = Y_test.copy()
+        else:
+            Y_train_new = [ y_train.copy() for y_train in Y_train ] 
+            Y_test_new = [ y_test.copy() for y_test in Y_train ] 
+            
 
-def parallel_apply_along_axis(func1d, axis, arr, *args, **kwargs):
-    """
-    Like numpy.apply_along_axis(), but takes advantage of multiple
-    cores.
-    """        
-    # Effective axis where apply_along_axis() will be applied by each
-    # worker (any non-zero axis number would work, so as to allow the use
-    # of `np.array_split()`, which is only done on axis 0):
-    effective_axis = 1 if axis == 0 else axis
-    if effective_axis != axis:
-        arr = arr.swapaxes(axis, effective_axis)
+    extraction_counter =0
+    for model_file_name, layer_name, kwargs in to_combine:
+        model_here = None
+        if isinstance(model_file_name, tf.keras.models.Model):
+            model_here = model_file_name
+            model_file_name = model_here.name
+        else:
+            if model_file_name in models_dict.keys():
+                model_here = models_dict[model_file_name]
+            else:
+                model_here = tf.keras.models.load_model(model_file_name,
+                                                        **kwargs) if kwargs is not None else tf.keras.models.load_model \
+                    (model_file_name)
 
-    # Chunks for the mapping (only a few chunks):
-    chunks = [(func1d, effective_axis, sub_arr, args, kwargs)
-              for sub_arr in np.array_split(arr, multiprocessing.cpu_count())]
+        features_model = Model(model_here.input,
+                               get_layer_by_name(model_here.layers, layer_name).output)
+        
+        if normalize_X_func is None:
+            X_trains_out.append(np.array(features_model.predict(X_train if not models_have_different_inputs else X_train[extraction_counter]), dtype='float64'))
+            X_test_out.append(np.array(features_model.predict(X_test if not models_have_different_inputs else X_test[extraction_counter]), dtype='float64'))
+        else:
+            X_trains_out.append(np.array(normalize_X_func(features_model.predict(X_train if not models_have_different_inputs else X_train[extraction_counter])), dtype='float64'))
+            X_test_out.append(np.array(normalize_X_func(features_model.predict(X_test if not models_have_different_inputs else X_test[extraction_counter])), dtype='float64'))
+        XY_dict[model_file_name][layer_name]['Train']['X'] = X_trains_out[-1]
+        XY_dict[model_file_name][layer_name]['Test']['X'] = X_test_out[-1]
+        XY_dict[model_file_name][layer_name]['Train']['Y'] = Y_train_new
+        XY_dict[model_file_name][layer_name]['Test']['Y'] = Y_test_new
+        models.append(((model_file_name, layer_name), (model_here, features_model)))
+        models_dict[model_file_name] = model_here
+        extraction_counter += 1
 
-    pool = multiprocessing.Pool()
-    individual_results = pool.map(unpacking_apply_along_axis, chunks)
-    # Freeing the workers:
-    pool.close()
-    pool.join()
+    X_train_new = np.concatenate(tuple(X_trains_out), axis=1)
+    X_test_new = np.concatenate(tuple(X_test_out), axis=1)
 
-    return np.concatenate(individual_results)
+    data_train = (X_train_new, Y_train_new)
+    data_test = (X_test_new, Y_test_new)
 
+    return models, data_train, data_test, XY_dict
+
+
+
+class CNNHyperModel(HyperModel):
+    def __init__(self, model_name, input_shape, num_classes):
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.model_name = model_name
+
+    def build(self, hp):
+        inputs = tf.keras.Input(shape=self.input_shape)
+        x = inputs
+
+        for idx, i in enumerate(range(hp.Int('conv128_blocks_with_normalizations', 1, 6, default=4))):
+            x = Conv1D(128, 3, padding='same', name=f"conv1D_128_{idx}")(x)
+            if hp.Boolean(f'conv128_has_leaky_relu_{idx}', default=True):
+                x = LeakyReLU()(x)
+            if hp.Boolean(f'conv128_has_max_pooling_{idx}', default=True):
+                x = MaxPooling1D()(x)
+            if hp.Boolean(f'conv128_has_batchnorm_{idx}', default=True):
+                x = BatchNormalization()(x)
+            if hp.Boolean(f'conv128_has_gaussiannoise_{idx}', default=True):
+                x = GaussianNoise(hp.Float(f'conv128_gaussiannoise_{idx}',
+                                       min_value=1e-5,
+                                       max_value=1e1,
+                                       sampling='LOG',
+                                       default=0.05
+                                       ))(x)
+        for idx, i in enumerate(range(hp.Int('conv256_blocks_with_normalizations', 1, 4, default=2))):
+            x = Conv1D(256, 3, padding='same', name=f"conv1D_256_{idx}")(x)
+            if hp.Boolean(f'conv256_has_leaky_relu_{idx}', default=True):
+                x = LeakyReLU()(x)
+            if hp.Boolean(f'conv256_has_max_pooling_{idx}', default=True):
+                x = MaxPooling1D()(x)
+            if hp.Boolean(f'conv256_has_batchnorm_{idx}', default=True):
+                x = BatchNormalization()(x)
+            if hp.Boolean(f'conv256_has_gaussiannoise_{idx}', default=True):
+                x = GaussianNoise(hp.Float(f'conv256_gaussiannoise_{idx}',
+                                       min_value=1e-5,
+                                       max_value=1e1,
+                                       sampling='LOG',
+                                       default=0.05
+                                       ))(x)
+        x = Flatten(name="last_flatten")(x)
+        for idx, i in enumerate(range(hp.Int('final_dense', 1, 5, default=2))):
+            x = Dense(units=hp.Choice(f'final_dense_num_nodes_{idx}', values=[16, 32, 64, 128], default=128),
+                  activation=hp.Choice(f'final_dense_kernel_activation_{idx}',
+                                       values=['exponential', 'gelu', 'elu', 'relu', 'tanh'], default='relu'),
+                  kernel_initializer='RandomNormal',
+                  bias_initializer='zeros',
+                  name=f"final_dense_{idx}")(x)
+            if hp.Boolean(f'final_dense_has_dropout_{idx}', default=True):
+                x = Dropout(hp.Float(f'final_dense_dropout_{idx}',
+                                 min_value=0.05,
+                                 max_value=0.75,
+                                 step=0.05,
+                                 default=0.2
+                                 ), name=f"final_dense_dropout_{idx}")(x)
+        outputs = Dense(self.num_classes, activation='softmax', name="last_softmax")(x)
+        model = tf.keras.Model(inputs, outputs, name=self.model_name)
+        #  m.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+        if hp.Boolean('optimize_adam', default=True):
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(hp.Float('learning_rate', 1e-5, 1e-1, sampling='log')),
+                loss='categorical_crossentropy',
+                metrics=['accuracy'])
+        else:
+            model.compile(
+                optimizer=hp.Choice('final_optimizer',
+                                    values=['adam', 'SGD', 'RMSprop', 'Adadelta', 'Nadam', 'Adamax', 'Adagrad'],
+                                    default='adam'),
+                loss='categorical_crossentropy',
+                metrics=['accuracy'])
+        return model
+    
+    
+    
+
+def reinitialize_weights(model):
+    for ix, layer in enumerate(model.layers):
+        if hasattr(model.layers[ix], 'kernel_initializer') and hasattr(model.layers[ix], 'bias_initializer'):
+            weight_initializer = model.layers[ix].kernel_initializer
+            bias_initializer = model.layers[ix].bias_initializer
+    
+            old_weights, old_biases = model.layers[ix].get_weights()
+    
+            model.layers[ix].set_weights([
+                weight_initializer(shape=old_weights.shape),
+                bias_initializer(shape=len(old_biases))])            
+    return model
+
+def reverse_tensor(X):
+    return tf.gather(X, tf.reverse(tf.range(start=0, limit=tf.shape(X)[0], dtype=tf.int32),(0,)) )
+
+
+class DNNFeatureMergeModel(HyperModel):
+    
+    def __init__(self, model_name, input_shape, num_classes):
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.model_name = model_name
+
+    def build(self, hp):
+        inputs = tf.keras.Input(shape=self.input_shape)
+        x = inputs
+        for idx, i in enumerate(range(hp.Int('dense_blocks_with_normalizations', 1, 5, default=1))):
+            if hp.Boolean(f'has_batchnormalization_{idx}', default=True):
+                x = BatchNormalization()(x)
+            x = Dense(units= hp.Choice(f'dense_block_nunits_{idx}', values=[32,64,128,256],default=128), 
+                      activation=hp.Choice(f'dense_activation_{idx}',
+                                       values=['selu', 'gelu', 'elu', 'relu', 'tanh', 'linear'], default='relu'),
+                  kernel_initializer=hp.Choice(f'dense_kernel_init_{idx}',
+                                       values=['HeNormal', 'VarianceScaling', 'GlorotUniform', 'RandomNormal'], default='RandomNormal'),
+                  bias_initializer='zeros',
+                  name=f'dense_{idx}')(x)
+            if hp.Boolean(f'has_leakyrelu_{idx}', default=True):
+                x = LeakyReLU()(x)
+            if hp.Boolean(f'has_dropout_{idx}', default=True):
+                x = Dropout(hp.Float(f'dense_dropout_value_{idx}',
+                                 min_value=0.1,
+                                 max_value=0.9,
+                                 step=0.1,
+                                 default=0.6
+                                 ), name=f"dense_dropout_{idx}")(x)
+        outputs = Dense(self.num_classes, activation='softmax', name="last_softmax")(x)
+        model = tf.keras.Model(inputs, outputs, name=self.model_name)
+        if hp.Boolean('optimize_adam', default=True):
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(hp.Float('learning_rate', 1e-5, 1e-1, sampling='log')),
+                loss='categorical_crossentropy',
+                metrics=['accuracy'])
+        else:
+            model.compile(
+                optimizer=hp.Choice('final_optimizer',
+                                    values=['adam', 'SGD', 'RMSprop', 'Adadelta', 'Nadam', 'Adamax', 'Adagrad'],
+                                    default='adam'),
+                loss='categorical_crossentropy',
+                metrics=['accuracy'])
+        return model
+    
+
+class BatchSizeTuner(kt.tuners.Hyperband):
+   def run_trial(self, trial, *args, **kwargs):
+#     # You can add additional HyperParameters for preprocessing and custom training loops via overriding `run_trial`
+     kwargs['batch_size'] = trial.hyperparameters.Int('batch_size', 16, 256, step=32)
+     super(BatchSizeTuner, self).run_trial(trial, *args, **kwargs)
+    
+def get_confusion_matrix_classification(model, X, Y_true):
+    y_pred = model.predict(X)
+    y_true = np.apply_along_axis(np.argmax, 1, Y_true)
+    y_pred = np.apply_along_axis(np.argmax, 1, y_pred)
+    return (confusion_matrix(y_true, y_pred), y_pred, y_true)
+
+def misclass_perc_to_weight(input_confusion, add_base=True, func=None):
+    perc_misclassified = 1.0 - np.array([ input_confusion[x,x] for x in np.arange(input_confusion.shape[0]).tolist() ])/input_confusion.sum(axis=1)
+    
+    base_val = min(perc_misclassified[perc_misclassified>0.0])
+    if add_base:        
+        perc_misclassified = perc_misclassified + base_val
+    
+    perc_misclassified = [ x/base_val for x in perc_misclassified]
+    
+    return dict([ (idx, func(perc_val)) if func is not None else (idx, perc_val) for idx, perc_val in enumerate(perc_misclassified) ])
+
+    
+
+# def unpacking_apply_along_axis(all_args):
+#     """
+#     Like numpy.apply_along_axis(), but with arguments in a tuple
+#     instead.
+
+#     This function is useful with multiprocessing.Pool().map(): (1)
+#     map() only handles functions that take a single argument, and (2)
+#     this function can generally be imported from a module, as required
+#     by map().
+#     """
+#     (func1d, axis, arr, args, kwargs) = all_args
+#     # return np.apply_along_axis(func1d, axis, arr, *args, **kwargs)
+
+
+# def parallel_apply_along_axis(func1d, axis, arr, *args, **kwargs):
+#     """
+#     Like numpy.apply_along_axis(), but takes advantage of multiple
+#     cores.
+#     """
+#     # Effective axis where apply_along_axis() will be applied by each
+#     # worker (any non-zero axis number would work, so as to allow the use
+#     # of `np.array_split()`, which is only done on axis 0):
+#     effective_axis = 1 if axis == 0 else axis
+#     if effective_axis != axis:
+#         arr = arr.swapaxes(axis, effective_axis)
+
+#     # Chunks for the mapping (only a few chunks):
+#     chunks = [(func1d, effective_axis, sub_arr, args, kwargs)
+#               for sub_arr in np.array_split(arr, multiprocessing.cpu_count())]
+
+#     pool = multiprocessing.Pool()
+#     individual_results = pool.map(unpacking_apply_along_axis, chunks)
+#     # Freeing the workers:
+#     pool.close()
+#     pool.join()
+
+#     return np.concatenate(individual_results)
 
 # ## not convinced these are correct, a check on the in/output does not pan out ... do not use now
 # https://github.com/phantomachine/numpy-setdiff-intersect/blob/master/setops.py

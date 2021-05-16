@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Bidirectional
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.layers import  Dense, Flatten, Activation, Dropout, Embedding, Conv1D, Conv2D, MaxPooling2D, MaxPooling1D, Concatenate, BatchNormalization, GaussianNoise
 from tensorflow.keras.layers import LSTM, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Input, Multiply, SimpleRNN, GRU, LeakyReLU
 from keras_self_attention import SeqSelfAttention, SeqWeightedAttention
@@ -10,11 +10,10 @@ import os
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 
 site.addsitedir("D:/Code/ncRNA")
-os.chdir("D:/Code/ncRNA")
 pd.set_option('display.width', 400)
 pd.set_option('display.max_columns', 40)
 
-from ncRNA_utils import getData, coShuffled_vectors, reverse_tensor, get_combined_features_from_models, getE2eData
+from ncRNA_utils import *
 
 
 
@@ -145,15 +144,36 @@ def compile_and_fit_model_basic(  model_func,
 
 
 if __name__ == "__main__":
+    os.chdir("D:/Code/ncRNA")
     
     X_train_1000e, Y_train_1000e, X_test_1000e, Y_test_1000e, X_val_1000e, Y_val_1000e = getE2eData(is500=False,
                                                                                                     include_secondary=False)
+    # X_train_1000e.shape[0]
+    # X_test_1000e.shape[0]
+    # X_val_1000e.shape[0]
 
     X_train_1000e, Y_train_1000e = coShuffled_vectors(X_train_1000e, Y_train_1000e)
     X_test_1000e, Y_test_1000e = coShuffled_vectors(X_test_1000e, Y_test_1000e)
 
-    cnn_2, history_cnn_2 = compile_and_fit_model_basic(baseline_CNN_finalist,
-                                                  "cnn_newdata_20210516",
+
+    # cnn_2, history_cnn_2 = compile_and_fit_model_basic(baseline_CNN_finalist,
+    #                                               "cnn_newdata_20210516",
+    #                                               X_train_1000e[0].shape,
+    #                                               X_train_1000e,
+    #                                               Y_train_1000e,
+    #                                               save_max_epoch=True,
+    #                                               save_final=True,
+    #                                               patience_count=10,
+    #                                               batch_size=128,
+    #                                               epochs=150,
+    #                                               class_weight=None,
+    #                                               validation_data=(X_val_1000e, Y_val_1000e))
+    # cnn_2.evaluate(X_test_1000e, Y_test_1000e)
+
+
+    cnn_finalist = load_model("cnn_newdata_20210516_model_010_0.942")
+    cnn_2, history_cnn_2 = compile_and_fit_model_basic(cnn_finalist,
+                                                  cnn_finalist.name,
                                                   X_train_1000e[0].shape,
                                                   X_train_1000e,
                                                   Y_train_1000e,
@@ -165,6 +185,11 @@ if __name__ == "__main__":
                                                   class_weight=None,
                                                   validation_data=(X_val_1000e, Y_val_1000e))
     cnn_2.evaluate(X_test_1000e, Y_test_1000e)
+    plot_history(history_cnn_2)
+    # cnn_finalist.name
+    
+    
+
 
 
 
