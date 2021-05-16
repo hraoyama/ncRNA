@@ -29,9 +29,6 @@ def confirm_no_duplicates_in_data(Xs):
     assert ((len(all_X) - len(np.unique(all_X, axis=0))) == 0)
     pass
 
-def remove_duplicates_in_data(xToFilter, xToRemove):
-    pass
-
 
 if __name__ == "__main__":
     os.chdir("D:/Code/ncRNA")
@@ -51,10 +48,9 @@ if __name__ == "__main__":
     Y_test_for_all = Y_test_for_all[idxs_kept,:]
     # validation is none for the original so this should be it...
 
-    np.save("D:/Code/ncRNA/data/X_test_for_all.npy", X_test_for_all)
-    np.save("D:/Code/ncRNA/data/Y_test_for_all.npy", Y_test_for_all)
+    # np.save("D:/Code/ncRNA/data/X_test_for_all.npy", X_test_for_all)
+    # np.save("D:/Code/ncRNA/data/Y_test_for_all.npy", Y_test_for_all)
 
-    X_test_for_all.save("D:/Code/ncRNA/data/X_test_for_all.npy")
 
     # CNN no secondary - great
     mCNN2_1000 = load_model("./models/CNN_baseline.h5")
@@ -69,7 +65,7 @@ if __name__ == "__main__":
     mRNN_1000l.evaluate(X_train_1000e, Y_train_1000e)  # 97.24% (should be the training accuracy)
     mRNN_1000l.evaluate(X_test_1000e, Y_test_1000e)  # 97.79% (should be the test accuracy - used to fit the model?)
     mRNN_1000l.evaluate(X_val_1000e, Y_val_1000e)  # 96.15% (the new validation data)
-    mRNN_1000l.evaluate(X_test_for_all, Y_test_for_all)  # .21% (the real validation data)
+    mRNN_1000l.evaluate(X_test_for_all, Y_test_for_all)  # 92.93% (the real validation data)
     
 
     # bad => need more data and overfits with hyperband ...

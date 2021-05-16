@@ -9,6 +9,7 @@ import gpflow
 from gpflow.utilities import ops, print_summary, set_trainable
 from gpflow.config import set_default_float, default_float, set_default_summary_fmt
 from gpflow.ci_utils import ci_niter
+import os
 
 matplotlib.use('Qt5Agg')
 
