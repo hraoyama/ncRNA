@@ -137,7 +137,7 @@ if __name__ == "__main__":
     opt = gpflow.optimizers.Scipy()
     opt_logs = opt.minimize(
         mGP.training_loss_closure(data_gp_train), mGP.trainable_variables,
-        options=dict(maxiter=ci_niter(20000))
+        options=dict(maxiter=ci_niter(40000))
     )
     # print_summary(mGP)
-    test_acc, Y_test_pred, (gp_mean, gp_var) = get_gp_acc(mGP, data_gp_test)
+    test_acc, Y_test_pred, (gp_mean, gp_var) = get_gp_acc(mGP, data_gp_test)   # 90.00% very weak given the inputs

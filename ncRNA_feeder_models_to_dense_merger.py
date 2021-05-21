@@ -69,13 +69,13 @@ if __name__ == "__main__":
     Y_new_train_w2nd = np.concatenate( (Y_train_1000e_w2nd, Y_val_1000e_w2nd), axis=0 )    
 
     # CNNs no secondary
-    mCNN1_1000 = load_model("./models/CNN_baseline_May16_e2e1000_256.h5")
+    mCNN1_1000 = load_model("./models/CNN_baseline_May16_e2e1000_256.h5") # CNN on 256 1st dens
     mCNN1_1000._name = "cnn_merged_newdata_finalist_1"
 
-    mCNN2_1000 = load_model("./models/CNN_baseline_May16_e2e.h5")
+    mCNN2_1000 = load_model("./models/CNN_baseline_May16_e2e.h5")   # CNN on 128 1st dens
     mCNN2_1000._name = "cnn_merged_newdata_finalist_2"
     
-    mCNN_1000 = load_model("cnn_noTest_20210516_model_445_0.998")
+    mCNN_1000 = load_model("cnn_noTest_20210516_model_445_0.998")   # CNN on 128 1st dens
     mCNN_1000._name = "cnn_merged_newdata_colab_finalist"
 
     
@@ -92,7 +92,8 @@ if __name__ == "__main__":
 
     # tf.keras.utils.plot_model(mCNN_1000_w2nd, show_shapes=True, to_file="C:/temp/test.png")
     # tf.keras.utils.plot_model(mCNN1_1000, show_shapes=True, to_file="C:/temp/test.png")
-    # only the final layers...
+
+    # only the final layers... with a secondary structure CNN
     to_combine_last_layers = [
         (mCNN_1000, "dense_2", None),
         (mCNN1_1000, "dense_26", None),
@@ -132,47 +133,143 @@ if __name__ == "__main__":
     # plot_history(history_cnn_combine)
     cnn_combine_model = load_model("combine_cnns_into_dense_model_350_0.999")
     cnn_combine_model = load_model("combine_cnns_into_dense_model_493_0.998")
-    cnn_combine_model.evaluate(data_test_ll[0],data_test_ll[1][0]) # 96.27%
+    cnn_combine_model.evaluate(data_test_ll[0],data_test_ll[1][0]) # 96.27%   (anywhere between 96% and 96.5%)
+
+
+    # only the final layers... no secondary structure CNN
+    to_combine_last_layers_no2nd = [
+        (mCNN_1000, "dense_2", None),
+        (mCNN1_1000, "dense_26", None),
+        (mCNN2_1000, "dense_14", None)
+    ]
+
+    combined_models_no2nd, data_train_ll_no2nd, data_test_ll_no2nd, data_access_ll_no2nd = get_combined_features_from_models(
+        to_combine_last_layers_no2nd,
+        [ X_new_train, X_new_train, X_new_train],
+        [ Y_new_train, Y_new_train, Y_new_train], 
+        [ X_test_1000e, X_test_1000e, X_test_1000e],
+        [ Y_test_1000e, Y_test_1000e, Y_test_1000e],
+        reverse_one_hot=False)
+    
+    
+    cnn_combine_model_no2nd = model_combination("combine_cnns_into_dense_no2nd", data_train_ll_no2nd[0][0].shape  )
+    cnn_combine_model_no2nd.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  
+    callbacks_used_cnn_combine_no2nd = [ModelCheckpoint(f'{cnn_combine_model_no2nd.name}' + '_model_{epoch:03d}_{accuracy:0.3f}',
+                                              save_weights_only=False,
+                                              monitor='accuracy',
+                                              mode='max',
+                                              save_best_only=True),
+                      tf.keras.callbacks.EarlyStopping(patience=10)
+                      ]
+    cnn_combine_model_no2nd.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    history_cnn_combine_no2nd = cnn_combine_model_no2nd.fit(data_train_ll_no2nd[0], 
+                                                data_train_ll_no2nd[1][0], 
+                                                callbacks=callbacks_used_cnn_combine_no2nd, 
+                                                verbose=2, 
+                                                epochs = 500, 
+                                                batch_size=64)
+    
+    cnn_combine_model_no2nd.evaluate(data_test_ll_no2nd[0],data_test_ll_no2nd[1][0]) # 96.5%
+
+    plot_history(history_cnn_combine_no2nd)
+
+
+    cnn_combine_model_no2nd = load_model("combine_cnns_into_dense_no2nd_model_276_0.998")
+    cnn_combine_model_no2nd.evaluate(data_test_ll_no2nd[0],data_test_ll_no2nd[1][0]) # 96.5%   
+    cnn_combine_model_no2nd = load_model("combine_cnns_into_dense_no2nd_model_271_0.998")
+    cnn_combine_model_no2nd.evaluate(data_test_ll_no2nd[0],data_test_ll_no2nd[1][0]) # 96.5%   
+    cnn_combine_model_no2nd = load_model("combine_cnns_into_dense_no2nd_model_142_0.997")
+    cnn_combine_model_no2nd.evaluate(data_test_ll_no2nd[0],data_test_ll_no2nd[1][0]) # 96.39%
+
+    
+
+    # only the penultimate dense layers... no secondary structure CNN
+    to_combine_penul_layers_no2nd = [
+        (mCNN_1000, "dense_1", None),
+        (mCNN1_1000, "dense_25", None),
+        (mCNN2_1000, "dense_13", None)
+    ]
+
+    combined_models_penul_no2nd, data_train_ll_penul_no2nd, data_test_ll_penul_no2nd, data_access_ll_penul_no2nd = get_combined_features_from_models(
+        to_combine_last_layers_no2nd,
+        [ X_new_train, X_new_train, X_new_train],
+        [ Y_new_train, Y_new_train, Y_new_train], 
+        [ X_test_1000e, X_test_1000e, X_test_1000e],
+        [ Y_test_1000e, Y_test_1000e, Y_test_1000e],
+        reverse_one_hot=False # ,
+        # normalize_X_func = tf.math.l2_normalize # this destroys predictive power!
+        )
+    
+    
+    cnn_combine_model_penul_no2nd = model_combination("combine_cnns_into_dense_penul_no2nd", data_train_ll_penul_no2nd[0][0].shape  )
+    cnn_combine_model_penul_no2nd.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  
+    callbacks_used_cnn_combine_penul_no2nd = [ModelCheckpoint(f'{cnn_combine_model_penul_no2nd.name}' + '_model_{epoch:03d}_{accuracy:0.3f}',
+                                              save_weights_only=False,
+                                              monitor='accuracy',
+                                              mode='max',
+                                              save_best_only=True),
+                      tf.keras.callbacks.EarlyStopping(patience=10)
+                      ]
+    cnn_combine_model_penul_no2nd.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    history_cnn_combine_penul_no2nd = cnn_combine_model_penul_no2nd.fit(data_train_ll_penul_no2nd[0], 
+                                                data_train_ll_penul_no2nd[1][0], 
+                                                callbacks=callbacks_used_cnn_combine_penul_no2nd, 
+                                                verbose=2, 
+                                                epochs = 1000, 
+                                                batch_size=64)
+    
+    cnn_combine_model_penul_no2nd.evaluate(data_test_ll_penul_no2nd[0],data_test_ll_penul_no2nd[1][0]) # 96.15% (without normalization)
+    plot_history(history_cnn_combine_penul_no2nd)
+
+    # only the penultimate dense layers... with secondary structure CNN
+    to_combine_penul_layers = [
+        (mCNN_1000, "dense_1", None),
+        (mCNN1_1000, "dense_25", None),
+        (mCNN2_1000, "dense_13", None),
+        (mCNN_1000_w2nd, "dense_16", None)
+    ]
+
+    combined_models_penul, data_train_ll_penul, data_test_ll_penul, data_access_ll_penul = get_combined_features_from_models(
+        to_combine_penul_layers,
+        [ X_new_train, X_new_train, X_new_train, X_new_train_w2nd],
+        [ Y_new_train, Y_new_train, Y_new_train, Y_new_train_w2nd], 
+        [ X_test_1000e, X_test_1000e, X_test_1000e, X_test_1000e_w2nd],
+        [ Y_test_1000e, Y_test_1000e, Y_test_1000e, Y_test_1000e_w2nd],
+        reverse_one_hot=False # ,
+        # normalize_X_func = tf.math.l2_normalize # this destroys predictive power!
+        )
+    
+    
+    cnn_combine_model_penul = model_combination("combine_cnns_into_dense_penul", data_train_ll_penul[0][0].shape  )
+    cnn_combine_model_penul.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  
+    callbacks_used_cnn_combine_penul = [ModelCheckpoint(f'{cnn_combine_model_penul.name}' + '_model_{epoch:03d}_{accuracy:0.3f}',
+                                              save_weights_only=False,
+                                              monitor='accuracy',
+                                              mode='max',
+                                              save_best_only=True),
+                      tf.keras.callbacks.EarlyStopping(patience=10)
+                      ]
+    cnn_combine_model_penul.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    history_cnn_combine_penul = cnn_combine_model_penul.fit(data_train_ll_penul[0], 
+                                                data_train_ll_penul[1][0], 
+                                                callbacks=callbacks_used_cnn_combine_penul, 
+                                                verbose=2, 
+                                                epochs = 1000, 
+                                                batch_size=64)
+    
+    cnn_combine_model_penul.evaluate(data_test_ll_penul[0],data_test_ll_penul[1][0]) # 96.04% (without normalization)
+    plot_history(history_cnn_combine_penul)
+
+    cnn_combine_model_penul = load_model("combine_cnns_into_dense_penul_model_653_0.998")
+    cnn_combine_model_penul.evaluate(data_test_ll_penul[0],data_test_ll_penul[1][0]) # 96.39%
+
+
     
 
 
 
-
-    
 
     # combine_cnns_into_dense_model_350_0.999
     
     tf.keras.utils.plot_model(cnn_combine_model, show_shapes=True)
     
-    cnn_combine_model.layers[0].input
-    
-    len(data_train_ll)
-    
-    
-    data_train_ll[1][0].shape
-    data_train_ll[1][1].shape
-    
-    
-
-    
-    data_train_ll[0].shape
-   
-    cnn_combine_model.input.shape
-    
-    
-    cnn_combine_model.compile()
-    
-
-
-    # reproducibility:
-    np.random.seed(0)
-    tf.random.set_seed(123)
-    
-    
-    
-    
-    
-    
-
-
-

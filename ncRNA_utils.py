@@ -16,7 +16,8 @@ from kerastuner import HyperModel
 import numpy as np
 import itertools
 import multiprocessing
-
+from numpy import genfromtxt
+import seaborn as sns
 
 def coShuffled_vectors(X, Y):
     if tf.shape(X)[0] == tf.shape(Y)[0]:
@@ -36,17 +37,33 @@ def getNpArrayFromH5(hf_Data):
     Y_train = np.array(Y_train)
     return X_train, Y_train
 
+def get_confusion_matrix_classification(model, X, Y_true):
+    y_pred = model.predict(X)
+    y_true = np.apply_along_axis(np.argmax, 1, Y_true)
+    y_pred = np.apply_along_axis(np.argmax, 1, y_pred)
+    return (confusion_matrix(y_true, y_pred), y_pred, y_true)
+
+def misclass_perc_to_weight(input_confusion, add_base=True, func=None):
+    perc_misclassified = 1.0 - np.array([ input_confusion[x,x] for x in np.arange(input_confusion.shape[0]).tolist() ])/input_confusion.sum(axis=1)
+    
+    base_val = min(perc_misclassified[perc_misclassified>0.0])
+    if add_base:        
+        perc_misclassified = perc_misclassified + base_val
+    
+    perc_misclassified = [ x/base_val for x in perc_misclassified]
+    return dict([ (idx, func(perc_val)) if func is not None else (idx, perc_val) for idx, perc_val in enumerate(perc_misclassified) ])
+
 
 # data extraction
-def getData(is500=True, shuffle=False, ise2e=False, include_secondary=False, validation_split=None):
+def getData(is500=True, shuffle=False, ise2e=False, include_secondary=False, validation_split=None, isColab=False):
     if not include_secondary:
         hf_Train = h5.File(
-            f'./data/{"e2e_Train_Data" if ise2e else "Fold_10_Train_Data"}_{str(500) if is500 else str(1000)}.h5', 'r')
+            f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/{"e2e_Train_Data" if ise2e else "Fold_10_Train_Data"}_{str(500) if is500 else str(1000)}.h5', 'r')
         hf_Test = h5.File(
-            f'./data/{"e2e_Test_Data" if ise2e else "Fold_10_Test_Data"}_{str(500) if is500 else str(1000)}.h5', 'r')
+            f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/{"e2e_Test_Data" if ise2e else "Fold_10_Test_Data"}_{str(500) if is500 else str(1000)}.h5', 'r')
     else:
-        hf_Train = h5.File(f'./data/e2e_Train_Secondary_Data_1136.h5', 'r')
-        hf_Test = h5.File(f'./data/e2e_Test_Secondary_Data_1136.h5', 'r')
+        hf_Train = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Train_Secondary_Data_1136.h5', 'r')
+        hf_Test = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Test_Secondary_Data_1136.h5', 'r')
 
     X_train, Y_train = getNpArrayFromH5(hf_Train)
     X_test, Y_test = getNpArrayFromH5(hf_Test)
@@ -65,15 +82,15 @@ def getData(is500=True, shuffle=False, ise2e=False, include_secondary=False, val
     return X_train, Y_train, X_test, Y_test, X_validation, Y_validation
 
 
-def getE2eData(is500=True, shuffle=False, include_secondary=False):
+def getE2eData(is500=True, shuffle=False, include_secondary=False, isColab=False):
     if not include_secondary:
         hf_Train = h5.File(
-            f'./data/e2e_Train_Data_{str(500) if is500 else str(1000)}.h5', 'r')
+            f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Train_Data_{str(500) if is500 else str(1000)}.h5', 'r')
         hf_Test = h5.File(
-            f'./data/e2e_Test_Data_{str(500) if is500 else str(1000)}.h5', 'r')
+            f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Test_Data_{str(500) if is500 else str(1000)}.h5', 'r')
     else:
-        hf_Train = h5.File(f'./data/e2e_Train_Secondary_Data_1136.h5', 'r')
-        hf_Test = h5.File(f'./data/e2e_Test_Secondary_Data_1136.h5', 'r')
+        hf_Train = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Train_Secondary_Data_1136.h5', 'r')
+        hf_Test = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Test_Secondary_Data_1136.h5', 'r')
 
     X_train, Y_train = getNpArrayFromH5(hf_Train)
     X_test, Y_test = getNpArrayFromH5(hf_Test)
@@ -84,8 +101,8 @@ def getE2eData(is500=True, shuffle=False, include_secondary=False):
         X_train, Y_train = coShuffled_vectors(X_train, Y_train)
         X_test, Y_test = coShuffled_vectors(X_test, Y_test)
 
-    hf_Val = h5.File(f'./data/e2e_Val_Secondary_Data_1136.h5', 'r') if include_secondary else h5.File(
-        f'./data/e2e_Val_Data_{str(500) if is500 else str(1000)}.h5', 'r')
+    hf_Val = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Val_Secondary_Data_1136.h5', 'r') if include_secondary else h5.File(
+        f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Val_Data_{str(500) if is500 else str(1000)}.h5', 'r')
     X_validation, Y_validation = getNpArrayFromH5(hf_Val)
     Y_validation = to_categorical(Y_validation, 13)  # Process the label of tain
 
@@ -302,6 +319,24 @@ def sparse_setdiff(a1, a2):
             idxs_to_keep.append(idx)
     return a1[idxs_to_keep], idxs_to_keep
 
+
+
+def reinitialize_weights(model):
+    for ix, layer in enumerate(model.layers):
+        if hasattr(model.layers[ix], 'kernel_initializer') and hasattr(model.layers[ix], 'bias_initializer'):
+            weight_initializer = model.layers[ix].kernel_initializer
+            bias_initializer = model.layers[ix].bias_initializer
+    
+            old_weights, old_biases = model.layers[ix].get_weights()
+    
+            model.layers[ix].set_weights([
+                weight_initializer(shape=old_weights.shape),
+                bias_initializer(shape=len(old_biases))])            
+    return model
+
+def reverse_tensor(X):
+    return tf.gather(X, tf.reverse(tf.range(start=0, limit=tf.shape(X)[0], dtype=tf.int32),(0,)) )
+
 def get_combined_features_from_models(
     
         to_combine,
@@ -448,24 +483,6 @@ class CNNHyperModel(HyperModel):
         return model
     
     
-    
-
-def reinitialize_weights(model):
-    for ix, layer in enumerate(model.layers):
-        if hasattr(model.layers[ix], 'kernel_initializer') and hasattr(model.layers[ix], 'bias_initializer'):
-            weight_initializer = model.layers[ix].kernel_initializer
-            bias_initializer = model.layers[ix].bias_initializer
-    
-            old_weights, old_biases = model.layers[ix].get_weights()
-    
-            model.layers[ix].set_weights([
-                weight_initializer(shape=old_weights.shape),
-                bias_initializer(shape=len(old_biases))])            
-    return model
-
-def reverse_tensor(X):
-    return tf.gather(X, tf.reverse(tf.range(start=0, limit=tf.shape(X)[0], dtype=tf.int32),(0,)) )
-
 
 class DNNFeatureMergeModel(HyperModel):
     
@@ -519,22 +536,63 @@ class BatchSizeTuner(kt.tuners.Hyperband):
      kwargs['batch_size'] = trial.hyperparameters.Int('batch_size', 16, 256, step=32)
      super(BatchSizeTuner, self).run_trial(trial, *args, **kwargs)
     
-def get_confusion_matrix_classification(model, X, Y_true):
-    y_pred = model.predict(X)
-    y_true = np.apply_along_axis(np.argmax, 1, Y_true)
-    y_pred = np.apply_along_axis(np.argmax, 1, y_pred)
-    return (confusion_matrix(y_true, y_pred), y_pred, y_true)
 
-def misclass_perc_to_weight(input_confusion, add_base=True, func=None):
-    perc_misclassified = 1.0 - np.array([ input_confusion[x,x] for x in np.arange(input_confusion.shape[0]).tolist() ])/input_confusion.sum(axis=1)
-    
-    base_val = min(perc_misclassified[perc_misclassified>0.0])
-    if add_base:        
-        perc_misclassified = perc_misclassified + base_val
-    
-    perc_misclassified = [ x/base_val for x in perc_misclassified]
-    
-    return dict([ (idx, func(perc_val)) if func is not None else (idx, perc_val) for idx, perc_val in enumerate(perc_misclassified) ])
+class SaveBestOverCombinedThresholds(tf.keras.callbacks.Callback):
+
+    def __init__(self, colab_download = False, observed_values = [ ('accuracy',0.9) ] ):
+        self.thresholds = dict(observed_values)
+        self.last_best_values = dict([ (obs_name, np.nan) for obs_name in self.thresholds.keys()] )
+        self.colab_download = colab_download
+        
+    def on_epoch_end(self, epoch, logs=None):        
+        register = None
+        for k,v in self.thresholds.items():
+            if k not in logs.keys():
+                raise ValueError(f"{k} not found in logs")
+            passes_threshold = logs[k] > self.thresholds[k]                 
+            register = passes_threshold if register is None else (register and passes_threshold)
+        
+        if register:
+            for k,v in self.thresholds.items():
+                if np.isnan(self.last_best_values[k]):
+                    self.last_best_values[k] = logs[k]
+                else:
+                    if logs[k] < self.last_best_values[k]:
+                        register = False
+                        break
+            if register:
+                for k,v in self.thresholds.items():
+                    self.last_best_values[k] = logs[k]
+                
+                base_name = f'{self.model.name}_epoch_{str(epoch)}_{"_".join([f"{k}_{v}"for k,v in self.last_best_values.items()])}'
+                self.model.save(f'{base_name}.h5')                
+                history_df = pd.DataFrame(self.model.history.history) 
+                history_df.to_csv(f'{base_name}_history.csv',header=True, index=False)
+                
+                if self.colab_download:
+                    from google.colab import files
+                    files.download(f'{base_name}.h5')
+                    files.download(f'{base_name}_history.csv')
+                
+                
+                
+gpout_data = genfromtxt("D:/Code/ncRNA/data/gp_no2nd256_no2nd128_j2nd256.csv", delimiter=',')        
+gpout_data = gpout_data[gpout_data>0.0]
+
+        
+sns.distplot(gpout_data, hist=True, kde=False, 
+             bins=int(180/5), color = 'blue',
+             hist_kws={'edgecolor':'black'})
+# Add labels
+plt.title('Histogram of Arrival Delays')
+plt.xlabel('Delay (min)')
+plt.ylabel('Flights')
+
+
+sns.distplot(gpout_data, hist=True, kde=True, 
+     bins=int(180/5), color = 'darkblue', 
+     hist_kws={'edgecolor':'black'},
+     kde_kws={'linewidth': 4})
 
     
 
