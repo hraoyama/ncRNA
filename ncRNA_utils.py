@@ -54,6 +54,29 @@ def misclass_perc_to_weight(input_confusion, add_base=True, func=None):
     return dict([ (idx, func(perc_val)) if func is not None else (idx, perc_val) for idx, perc_val in enumerate(perc_misclassified) ])
 
 
+from sklearn.metrics import precision_recall_fscore_support
+from pycm import ConfusionMatrix
+
+def prf(model,xtest, ytest):
+  y_pred = np.apply_along_axis(np.argmax, 1, model.predict(xtest))
+  y_true = np.apply_along_axis(np.argmax, 1, ytest)
+  return precision_recall_fscore_support(y_true, y_pred, average="weighted")
+
+def get_sp_pr_rc_f1(model,xtest, ytest):  
+    y_pred = np.apply_along_axis(np.argmax, 1, model.predict(xtest))
+    y_true = np.apply_along_axis(np.argmax, 1, ytest)
+    cmres = ConfusionMatrix(actual_vector=y_true,predict_vector=y_pred)
+    pr, rc, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="weighted")   
+    return cmres.TNR_Macro, pr, rc, f1
+ 
+def get_sp_pr_rc_f1_acc(model,xtest, ytest):  
+    spec, pr, rc, f1 = get_sp_pr_rc_f1(model,xtest, ytest)
+    acc = model.evaluate(xtest,ytest)[-1]        
+    return spec, pr, rc, f1, acc
+
+# cmres = [ ConfusionMatrix(actual_vector=np.apply_along_axis(np.argmax, 1, ytest)  ,predict_vector=np.apply_along_axis(np.argmax, 1, model.predict(xtest))) for model, xtest, ytest in to_eval ]
+# [ (x.TNR_Macro,x.TPR_Macro, x.PPV_Macro, x.F1_Macro)  for x in cmres ]  # specificity/true neg rate, sensitivity/recall, precision/predictive pos value, F1= harmonic(precision/recall)
+
 # data extraction
 def getData(is500=True, shuffle=False, ise2e=False, include_secondary=False, validation_split=None, isColab=False):
     if not include_secondary:
@@ -107,6 +130,38 @@ def getE2eData(is500=True, shuffle=False, include_secondary=False, isColab=False
     Y_validation = to_categorical(Y_validation, 13)  # Process the label of tain
 
     return X_train, Y_train, X_test, Y_test, X_validation, Y_validation
+
+
+def getE2eDataJustSecondary(shuffle=False,isColab=False):
+    hf_Train = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Train_just_Secondary_Data_1000.h5', 'r')
+    hf_Test = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Test_just_Secondary_Data_1000.h5', 'r')
+
+    X_train, Y_train = getNpArrayFromH5(hf_Train)
+    X_test, Y_test = getNpArrayFromH5(hf_Test)
+    Y_train = to_categorical(Y_train, 13)  # Process the label of tain
+    Y_test = to_categorical(Y_test, 13)  # Process the label of te
+
+    if shuffle:
+        X_train, Y_train = coShuffled_vectors(X_train, Y_train)
+        X_test, Y_test = coShuffled_vectors(X_test, Y_test)
+
+    hf_Val = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Val_just_Secondary_Data_1000.h5', 'r')
+    
+    X_validation, Y_validation = getNpArrayFromH5(hf_Val)
+    Y_validation = to_categorical(Y_validation, 13)  # Process the label of tain
+
+    return X_train, Y_train, X_test, Y_test, X_validation, Y_validation
+
+
+def getTest12Data():
+    hf_Test = h5.File(f'./data/e2e_Test_Data_1000_12classes.h5', 'r')
+    X_test, Y_test = getNpArrayFromH5(hf_Test)
+    Y_test = to_categorical(Y_test, 13)  # Process the label of te
+
+    return X_test, Y_test
+
+
+
 
 
 def plot_history(history):
@@ -563,8 +618,7 @@ class SaveBestOverCombinedThresholds(tf.keras.callbacks.Callback):
             if register:
                 for k,v in self.thresholds.items():
                     self.last_best_values[k] = logs[k]
-                
-                base_name = f'{self.model.name}_epoch_{str(epoch)}_{"_".join([f"{k}_{v}"for k,v in self.last_best_values.items()])}'
+                base_name = f'{self.model.name}_epoch_{str(epoch)}_{"_".join(["{}_{:.3f}".format(k,v) for k,v in self.last_best_values.items()])}'
                 self.model.save(f'{base_name}.h5')                
                 history_df = pd.DataFrame(self.model.history.history) 
                 history_df.to_csv(f'{base_name}_history.csv',header=True, index=False)
@@ -576,23 +630,22 @@ class SaveBestOverCombinedThresholds(tf.keras.callbacks.Callback):
                 
                 
                 
-gpout_data = genfromtxt("D:/Code/ncRNA/data/gp_no2nd256_no2nd128_j2nd256.csv", delimiter=',')        
-gpout_data = gpout_data[gpout_data>0.0]
+# gpout_data = genfromtxt("D:/Code/ncRNA/data/gp_no2nd256_no2nd128_j2nd256.csv", delimiter=',')        
+# gpout_data = gpout_data[gpout_data>0.0]
+       
+# sns.distplot(gpout_data, hist=True, kde=False, 
+#              bins=int(180/5), color = 'blue',
+#              hist_kws={'edgecolor':'black'})
+# # Add labels
+# plt.title('Histogram of Arrival Delays')
+# plt.xlabel('Delay (min)')
+# plt.ylabel('Flights')
 
-        
-sns.distplot(gpout_data, hist=True, kde=False, 
-             bins=int(180/5), color = 'blue',
-             hist_kws={'edgecolor':'black'})
-# Add labels
-plt.title('Histogram of Arrival Delays')
-plt.xlabel('Delay (min)')
-plt.ylabel('Flights')
 
-
-sns.distplot(gpout_data, hist=True, kde=True, 
-     bins=int(180/5), color = 'darkblue', 
-     hist_kws={'edgecolor':'black'},
-     kde_kws={'linewidth': 4})
+# sns.distplot(gpout_data, hist=True, kde=True, 
+#      bins=int(180/5), color = 'darkblue', 
+#      hist_kws={'edgecolor':'black'},
+#      kde_kws={'linewidth': 4})
 
     
 
