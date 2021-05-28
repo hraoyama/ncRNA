@@ -50,16 +50,116 @@ def model_combination(model_name, input_shape):
     ], name=model_name)
     return model
 
+def model_combination_X88(model_name, input_shape):
+    model = Sequential([
+        tf.keras.Input(shape=input_shape),
+        BatchNormalization(),
+        Dense(256, kernel_initializer='RandomNormal', bias_initializer='zeros'),
+        LeakyReLU(),
+        Dropout(0.6),
+        #GaussianNoise(0.1),
+        Dense(128, kernel_initializer='RandomNormal', bias_initializer='zeros', kernel_regularizer = tf.keras.regularizers.l1(1e-3)),
+        LeakyReLU(),
+        #Dense(32, kernel_initializer='RandomNormal', bias_initializer='zeros', kernel_regularizer = tf.keras.regularizers.l1(1e-2)),
+        #LeakyReLU(),
+        Dropout(0.6),
+        Dense(32, kernel_initializer='RandomNormal', bias_initializer='zeros', kernel_regularizer = tf.keras.regularizers.l1(1e-2)),
+        LeakyReLU(),
+        Dropout(0.5),
+        # Dense(128, kernel_initializer='RandomNormal', bias_initializer='zeros', kernel_regularizer = tf.keras.regularizers.l1(1e-2)),
+        # LeakyReLU(),
+        Dense(88, activation='softmax')
+    ], name=model_name)
+    return model
+
 
 if __name__ == "__main__":
     
     os.chdir("D:/Code/ncRNA")
     
     
-    ## TEST History
-    # mCNNx1_1000 = load_model("./models/CNN_baseline_May27_0pct.h5") 
-    # mCNNx1_1000.history is None
+    ## 88K data
     
+    mRNNx88_1000 = load_model("./models/RNN_baseline_20May_88_4.h5", custom_objects=SeqWeightedAttention.get_custom_objects()) 
+    X88_train, Y88_train, X88_test, Y88_test, X88_validation, Y88_validation = get88KData()
+    Y88_test_cleaned = Y88_test[:,0:88].copy()
+    Y88_train_cleaned = Y88_train[:,0:88].copy()
+    Y88_validation_cleaned = Y88_validation[:,0:88].copy()
+    
+    # get_sp_pr_rc_f1_acc(mRNNx88_1000 , X88_test, Y88_test)
+    y_pred = np.apply_along_axis(np.argmax, 1, mRNNx88_1000.predict(X88_test))
+    y_true = np.apply_along_axis(np.argmax, 1, Y88_test)
+    cmres = ConfusionMatrix(actual_vector=y_true,predict_vector=y_pred)
+    print(cmres)
+    pr, rc, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="weighted")   
+    acc_data = mRNNx88_1000.evaluate(X88_test,Y88_test_cleaned)
+    cm88 = confusion_matrix(y_pred,y_true)
+    # np.trace(cm88)/np.sum(cm88)
+    print(cmres.TNR_Macro, pr, rc, f1, np.trace(cm88)/np.sum(cm88))
+
+    mCNNx88_1000 = load_model("./models/CNN_baseline_May18_e2e1000_256_88_50epochs.h5") 
+    y_pred_Cx88 = np.apply_along_axis(np.argmax, 1, mCNNx88_1000.predict(X88_test))
+    y_true_Cx88 = np.apply_along_axis(np.argmax, 1, Y88_test)
+    # np.unique(y_true_Cx88)
+    cmres_Cx88 = ConfusionMatrix(actual_vector=y_true_Cx88,predict_vector=y_pred_Cx88)
+    print(cmres_Cx88)
+    pr_Cx88, rc_Cx88, f1_Cx88, _ = precision_recall_fscore_support(y_true_Cx88, y_pred_Cx88, average="weighted")   
+    cm88_Cx88 = confusion_matrix(y_pred_Cx88,y_true_Cx88)
+
+    print(cmres_Cx88.TNR_Macro, pr_Cx88, rc_Cx88, f1_Cx88, np.trace(cm88_Cx88)/np.sum(cm88_Cx88))
+    
+
+    accCNNx88_data = mCNNx88_1000.evaluate(X88_test,Y88_test_cleaned)
+    
+    
+    tf.keras.utils.plot_model(mRNNx88_1000, show_shapes=True)
+    
+    
+# LD(A88)+LD(E88)
+    to_combine_penul_x88_layers_no2nd_rNo2nd = [
+        (mCNNx88_1000, "dense_1", None),
+        (mRNNx88_1000,"dense_10", None)
+    ]
+
+    combined_models_x88_no2nd_rNo2nd_penul, data_train_x88_penul_no2nd_rNo2nd, data_test_x88_penul_no2nd_rNo2nd, data_access_x88_penul_no2nd_rNo2nd = get_combined_features_from_models(
+        to_combine_penul_x88_layers_no2nd_rNo2nd,
+        [ X88_train, X88_train],
+        [ Y88_train_cleaned,  Y88_train_cleaned], 
+        [ X88_test,  X88_test],
+        [ Y88_test_cleaned,  Y88_test_cleaned],
+        reverse_one_hot=False)
+
+    rcnn_combine_x88_penul_models_no2nd_rNo2nd = model_combination_X88("combine_rcnns_x88_penul_no2nd_rNo2nd_into_dense", data_train_x88_penul_no2nd_rNo2nd[0][0].shape  )
+    rcnn_combine_x88_penul_models_no2nd_rNo2nd.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  
+    callbacks_used_rcnn_combine_x88_penul_no2nd_rNo2nd = [ModelCheckpoint(f'{rcnn_combine_x88_penul_models_no2nd_rNo2nd.name}' + '_model_{epoch:03d}_{accuracy:0.3f}',
+                                                save_weights_only=False,
+                                                monitor='accuracy',
+                                                mode='max',
+                                                save_best_only=True),
+                        tf.keras.callbacks.EarlyStopping(patience=20)
+                        ]
+    rcnn_combine_x88_penul_models_no2nd_rNo2nd.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    history_rcnn_x88_combine_penul_no2nd_rNo2nd = rcnn_combine_x88_penul_models_no2nd_rNo2nd.fit(data_train_x88_penul_no2nd_rNo2nd[0], 
+                                                  data_train_x88_penul_no2nd_rNo2nd[1][0], 
+                                                  callbacks=callbacks_used_rcnn_combine_x88_penul_no2nd_rNo2nd, 
+                                                  verbose=2, 
+                                                  epochs = 500, 
+                                                  batch_size=256)
+      
+    rcnn_combine_x88_penul_models_no2nd_rNo2nd.evaluate(data_test_penul_no2nd_rNo2nd[0],data_test_penul_no2nd_rNo2nd[1][0]) # 99.5%    
+
+    rcnn_combine_x88_penul_models_no2nd_rNo2nd.save(f"./data/{rcnn_combine_penul_models_no2nd_rNo2nd.name}.h5")
+    rcnn_combine_x88_penul_models_no2nd_rNo2nd = load_model("combine_rcnns_x88_penul_no2nd_rNo2nd_into_dense_model_003_0.977")
+    get_sp_pr_rc_f1_acc(rcnn_combine_x88_penul_models_no2nd_rNo2nd,data_test_x88_penul_no2nd_rNo2nd[0],data_test_x88_penul_no2nd_rNo2nd[1][0])
+
+    data_test_penul_no2nd_rNo2nd[0].shape
+    data_test_penul_no2nd_rNo2nd[1][0].shape
+
+
+
+
+    
+    ###########    
     
     # 'new' data
     X_train_1000e, Y_train_1000e, X_test_1000e, Y_test_1000e, X_val_1000e, Y_val_1000e = getE2eData(is500=False,

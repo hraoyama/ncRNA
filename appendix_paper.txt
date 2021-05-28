@@ -1,0 +1,27 @@
+\appendix
+
+\section{Hardware and algorithms}
+
+All code was created in python with the relevant algorithms using packages 
+\begin{itemize}
+    \item tensorflow \textit{v2.4.1}
+    \item pandas \textit{v1.0.5}
+    \item numpy \textit{v1.18.5}
+    \item scipy \textit{v1.5.0}
+    \item sklearn \textit{v0.23.1} 
+    \item h5py \textit{v2.10.0}
+\end{itemize}
+Given the limited size of the data set this code was run with the help of local CPUs (AMD Ryzen 3960X) or a GPU on google colab (Tesla P100-PCIE-16GB).
+
+All algorithms are availabe by \answerTODO{}.
+
+
+\begin{figure}[htp]
+\centering
+\includegraphics[width=.40\textwidth]{corr_cnn_seq_ld_cnn_j2nd_ld.png}\hfill
+\includegraphics[width=.40\textwidth]{corr_cnn_seq_ld_rnn_seq_ld.png}\hfill
+\caption{\textbf{(a)} Correlation of dense layer features between \textbf{A} and \textbf{D}.
+\textbf{(b)} Correlation of dense layer features between \textbf{A} and \textbf{E}
+}
+\label{fig:corr_components}
+\end{figure}

@@ -138,8 +138,10 @@ def getE2eDataJustSecondary(shuffle=False,isColab=False):
 
     X_train, Y_train = getNpArrayFromH5(hf_Train)
     X_test, Y_test = getNpArrayFromH5(hf_Test)
-    Y_train = to_categorical(Y_train, 13)  # Process the label of tain
-    Y_test = to_categorical(Y_test, 13)  # Process the label of te
+    
+    
+    Y_train = to_categorical(Y_train, Y_test.shape[-1])  # Process the label of tain
+    Y_test = to_categorical(Y_test, Y_test.shape[-1])  # Process the label of te
 
     if shuffle:
         X_train, Y_train = coShuffled_vectors(X_train, Y_train)
@@ -148,7 +150,7 @@ def getE2eDataJustSecondary(shuffle=False,isColab=False):
     hf_Val = h5.File(f'./{"data" if not isColab else "drive/MyDrive/data_papers/ncRNA"}/e2e_Val_just_Secondary_Data_1000.h5', 'r')
     
     X_validation, Y_validation = getNpArrayFromH5(hf_Val)
-    Y_validation = to_categorical(Y_validation, 13)  # Process the label of tain
+    Y_validation = to_categorical(Y_validation, Y_test.shape[-1])  # Process the label of tain
 
     return X_train, Y_train, X_test, Y_test, X_validation, Y_validation
 
@@ -161,7 +163,21 @@ def getTest12Data():
     return X_test, Y_test
 
 
+def get88KData():
+    hf_Train = h5.File(f'./data/e2e_Train_Data_1000_88.h5', 'r')
+    hf_Test = h5.File(f'./data/e2e_Test_Data_1000_88.h5', 'r')
 
+    X_train, Y_train = getNpArrayFromH5(hf_Train)
+    X_test, Y_test = getNpArrayFromH5(hf_Test)
+    Y_train = to_categorical(Y_train, Y_test.shape[-1])  # Process the label of tain
+    Y_test = to_categorical(Y_test, Y_test.shape[-1])  # Process the label of te
+
+    hf_Val = h5.File(f'./data/e2e_Val_Data_1000_88.h5', 'r') 
+    X_validation, Y_validation = getNpArrayFromH5(hf_Val)
+    Y_validation = to_categorical(Y_validation, Y_test.shape[-1])  # Process the label of tain
+
+    return X_train, Y_train, X_test, Y_test, X_validation, Y_validation
+    
 
 
 def plot_history(history):
